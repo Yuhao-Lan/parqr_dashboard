@@ -1,4 +1,6 @@
 # import the Flask class from the flask module
+import requests
+import json
 from flask import Flask, render_template, redirect, url_for, request
 from flask_bootstrap import Bootstrap
 from flask_wtf import FlaskForm 
@@ -18,16 +20,13 @@ db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+global user
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(15), unique=True)
     password = db.Column(db.String(80))
     is_admin = db.Column(db.Boolean, default=False)
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
 
 class RegisterForm(FlaskForm):
     username = StringField('username', validators=[InputRequired(), Length(min=4, max=15)])
@@ -41,12 +40,18 @@ class LoginForm(FlaskForm):
     password = PasswordField('password', validators=[InputRequired(), Length(min=8, max=80)])
     remember = BooleanField('remember me')
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 # use decorators to link the function to a url
 @app.route('/parqr')
 @login_required
 def parqr():
-    return render_template('parqr.html')  # return a string
+ #call APIs
+    params={}
+    api_result=requests.get('https://aws.parqr.io/prod/courses',params=params)
+    return render_template('parqr.html', current_user=current_user, course_info=json.loads(api_result.text), len=len(json.loads(api_result.text)))
     
 
 @app.route('/user', methods=['GET', 'POST'])
@@ -56,38 +61,62 @@ def user():
         return "You have not permission to view this page!"
     form1 = RegisterForm()
     form2 = DeleteForm()
-    if form1.validate_on_submit():
-        hashed_password = generate_password_hash(form1.password.data, method='sha256')
-        createdUser = User.query.filter_by(username=form1.username.data).first()
-        if createdUser is not None:
-            regristeredUsers = [(item.username) for item in User.query.all()] 
-            return render_template('user.html', form1=form1, form2=form2, message1="User already exists!", regristeredUsers=regristeredUsers)
+    if request.method == "POST":
+        if form1.validate_on_submit():
+            hashed_password = generate_password_hash(form1.password.data, method='sha256')
+            createdUser = User.query.filter_by(username=form1.username.data).first()
+            if createdUser is not None:
+                regristeredUsers = [(item.username) for item in User.query.all()] 
+                return render_template('user.html', form1=form1, form2=form2, message1="User already exists!", regristeredUsers=regristeredUsers)
 
-        new_user = User(username=form1.username.data, password=hashed_password, is_admin=False)
-        db.session.add(new_user)
-        db.session.commit()
-        usernames = User.query.all()
-        regristeredUsers = [(item.username) for item in usernames] 
-        return render_template('user.html', form1=form1, form2=form2, message1="New user has been created successfully!", regristeredUsers=regristeredUsers, current_user=current_user)
+            new_user = User(username=form1.username.data, password=hashed_password, is_admin=False)
+            db.session.add(new_user)
+            db.session.commit()
+            usernames = User.query.all()
+            regristeredUsers = [(item.username) for item in usernames] 
+            return render_template('user.html', form1=form1, form2=form2, message1="New user has been created successfully!", regristeredUsers=regristeredUsers, current_user=current_user)
 
-    if form2.validate_on_submit():
-        if form2.username.data == 'admin12345':
-            regristeredUsers = [(item.username) for item in User.query.all()] 
-            return render_template('user.html', form1=form1, form2=form2, message2="You cannot delete administrator!", regristeredUsers=regristeredUsers, current_user=current_user)
+        if form2.validate_on_submit():
+            if form2.username.data == 'admin12345':
+                regristeredUsers = [(item.username) for item in User.query.all()] 
+                return render_template('user.html', form1=form1, form2=form2, message2="You cannot delete administrator!", regristeredUsers=regristeredUsers, current_user=current_user)
 
-        deletedUser = User.query.filter_by(username=form2.username.data).first()
-        #check user is exist
-        if deletedUser is None:
+            deletedUser = User.query.filter_by(username=form2.username.data).first()
+            #check user is exist
+            if deletedUser is None:
+                regristeredUsers = [(item.username) for item in User.query.all()] 
+                return render_template('user.html', form1=form1, form2=form2, message2="User is not exist!", regristeredUsers=regristeredUsers, current_user=current_user)
+            db.session.delete(deletedUser)
+            db.session.commit()
             regristeredUsers = [(item.username) for item in User.query.all()] 
-            return render_template('user.html', form1=form1, form2=form2, message2="User is not exist!", regristeredUsers=regristeredUsers, current_user=current_user)
-        db.session.delete(deletedUser)
-        db.session.commit()
+            return render_template('user.html', form1=form1, form2=form2, message2="User has been deleted successfully!", regristeredUsers=regristeredUsers, current_user=current_user)
+    else:
         regristeredUsers = [(item.username) for item in User.query.all()] 
-        return render_template('user.html', form1=form1, form2=form2, message2="User has been deleted successfully!", regristeredUsers=regristeredUsers, current_user=current_user)
+        return render_template('user.html', form1=form1, form2=form2, message1=None, message2=None, regristeredUsers=regristeredUsers, current_user=current_user)
+
+
 
     usernames = User.query.all()
     regristeredUsers = [(item.username) for item in usernames] 
-    return render_template('user.html', form1=form1, form2=form2, regristeredUsers=regristeredUsers)
+    return render_template('user.html', form1=form1, form2=form2, regristeredUsers=regristeredUsers, current_user=current_user)
+
+@app.route('/delete', methods=['POST'])
+def delete():
+    if "deleteUserName" in request.form:
+        deletedUserName = request.form['deleteUserName']
+        deletedUser = User.query.filter_by(username=deletedUserName).first()
+        regristeredUsers = [(item.username) for item in User.query.all()] 
+        if deletedUser is None:
+            pass
+        if deletedUserName == 'admin12345':
+            pass
+        else:
+            db.session.delete(deletedUser)
+            db.session.commit()
+            regristeredUsers = [(item.username) for item in User.query.all()] 
+            return redirect(url_for('user'))
+
+
 
 # route for handling the login page logic
 @app.route('/', methods=['GET', 'POST'])
@@ -105,7 +134,11 @@ def login():
         if user:
             if check_password_hash(user.password, form.password.data):
                 login_user(user, remember=form.remember.data)
-                return render_template('parqr.html', current_user=user)
+                #call APIs
+                params={}
+                api_result=requests.get('https://aws.parqr.io/prod/courses',params=params)
+                print(json.loads(api_result.text))
+                return render_template('parqr.html', current_user=user, course_info=json.loads(api_result.text), len=len(json.loads(api_result.text)))
             else:
                 return render_template('login.html', form=form, message="The password is wrong. Please try again.")
         else:

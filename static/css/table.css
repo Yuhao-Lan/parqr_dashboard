@@ -17,4 +17,9 @@ table.dataTable thead tr {
 
 button.btn.btn-lg.btn-primary.btn-block {
   background-color: #488AC7;
+  border-color: black;
+}
+
+.table-hover tbody tr:hover td {
+    background: #ffff99;
 }
